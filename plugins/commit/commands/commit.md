@@ -8,7 +8,7 @@ Current state:
 - Branch: !`git branch --show-current`
 - Status: !`git status --short`
 - Diff: !`git diff HEAD 2>/dev/null || git diff --cached`
-- Recent commits: !`git log --oneline -10 2>/dev/null`
+- Recent commits: !`git log --oneline -10 2>/dev/null || true`
 
 First, ask with AskUserQuestion (one question, header "Commit", single select) what to do with these changes, these three options in this order:
 1. **Commit + push (Recommended)**: commit on the current branch, then push it.
