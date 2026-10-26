@@ -18,7 +18,7 @@ type World = {
   table?: string
   processErrors?: string[]
   unknownVoices?: string[]
-  speaker?: 'speaks' | 'talks on' | 'fails'
+  speaker?: 'speaks' | 'talks on' | 'fails' | 'falls back'
   /** How many narrations of other windows the speaker says wait their turn behind it. */
   waiting?: number
   hasEngineVoice?: boolean
@@ -97,6 +97,11 @@ function world (on: On, { system = 'Darwin', env = {}, reply = 'es\nHe añadido 
       if (speaker === 'fails') {
         yield { stream: 'stdout' as const, text: 'error: no voice\n' }
         return { value: { code: 1, signal: null } }
+      }
+      if (speaker === 'falls back') {
+        yield { stream: 'stdout' as const, text: 'voice my-voice\nvoice Luisa\n' }
+        heard()
+        return { value: { code: 0, signal: null } }
       }
       const wanted = e.env?.NARRATOR_VOICE ?? ''
       yield { stream: 'stdout' as const, text: `pid 42\n${unknownVoices.includes(wanted) ? `no voice ${wanted}\n` : ''}voice Luisa\n${waiting > 0 ? `waiting ${waiting}\n` : ''}` }
@@ -522,14 +527,29 @@ test('a speak command runs on Linux too', { options: { command: 'my-voice' } }, 
   expect(behindLine(w.spoken[0]!).slice(4)).toEqual(['sh', '-c', 'exec my-voice "$1"', 'narrator-command', 'He añadido el narrador y los tests pasan.'])
 })
 
-test('on Windows a speak command is left aside: the system voice speaks', { options: { command: 'my-voice' } }, async ($, on) => {
+test('on Windows a speak command runs through PowerShell with the narration and its settings', { options: { command: 'my-voice --quiet' } }, async ($, on) => {
   const w = world(on, { system: 'Windows_NT', env: { OS: 'Windows_NT' }, store: { enabled: true } })
   await startSession($)
   const speech = w.nextSpeech()
   await turn($)
   await speech
   expect(w.spoken[0]!.argv[0]).toBe('powershell')
-  expect(w.spoken[0]!.env.NARRATOR_SPEAKER).toBeUndefined()
+  expect(w.spoken[0]!.env).toMatchObject({
+    NARRATOR_SPEAKER: 'my-voice --quiet',
+    NARRATOR_TEXT: 'He añadido el narrador y los tests pasan.',
+    NARRATOR_LANG: 'es',
+    NARRATOR_VOICE: '',
+    NARRATOR_SPEED: '1.3',
+    NARRATOR_TICKET: '0000000000000'
+  })
+})
+
+test('when a Windows speak command fails, the system fallback is the voice that finished', { options: { command: 'my-voice' } }, async ($, on) => {
+  const w = world(on, { env: { OS: 'Windows_NT' }, speaker: 'falls back' })
+  await startSession($)
+  const result = await narrator($, 'test')
+  expect(result.text).toBe('Narrator: previewed Luisa.')
+  expect(w.spoken[0]!.env.NARRATOR_SPEAKER).toBe('my-voice')
 })
 
 test('with no language set, the switch shows none and the narrator follows the request', async ($, on) => {

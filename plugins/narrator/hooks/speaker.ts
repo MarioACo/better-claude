@@ -143,6 +143,23 @@ function Pick($voices) {
 
 $script:isSpeaking = $false
 
+# A person's own speaker. It runs inside this PowerShell process, after taking the shared Windows
+# line, with the narration as its last argument. Its output is hidden so it cannot be mistaken for
+# this script's voice protocol. A failure leaves the system synthesizer below to speak instead.
+function Speak-Command {
+  $speaker = "$env:NARRATOR_SPEAKER"
+  if (-not $speaker) { return $false }
+  $quotedText = "'" + $text.Replace("'", "''") + "'"
+  Say "voice $speaker"
+  try {
+    $global:LASTEXITCODE = 0
+    $expression = '& ' + $speaker + ' ' + $quotedText + ' *> $null'
+    Invoke-Expression $expression
+    if ($? -and $LASTEXITCODE -eq 0) { return $true }
+  } catch {}
+  return $false
+}
+
 function Speak-OneCore {
   Add-Type -AssemblyName System.Runtime.WindowsRuntime
   $null = [Windows.Media.SpeechSynthesis.SpeechSynthesizer, Windows.Media.SpeechSynthesis, ContentType = WindowsRuntime]
@@ -252,11 +269,13 @@ function Tick {
 
 if (-not (Enter-Line)) { Say 'skipped'; exit 0 }
 try {
-  try {
-    Speak-OneCore
-  } catch {
-    if ($script:isSpeaking) { exit 0 }
-    try { Speak-Sapi } catch { if (-not $script:isSpeaking) { Say "error: $($_.Exception.Message)" } }
+  if (-not (Speak-Command)) {
+    try {
+      Speak-OneCore
+    } catch {
+      if ($script:isSpeaking) { exit 0 }
+      try { Speak-Sapi } catch { if (-not $script:isSpeaking) { Say "error: $($_.Exception.Message)" } }
+    }
   }
 } finally {
   Exit-Line
