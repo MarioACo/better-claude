@@ -143,20 +143,34 @@ function Pick($voices) {
 
 $script:isSpeaking = $false
 
-# A person's own speaker. It runs inside this PowerShell process, after taking the shared Windows
-# line, with the narration as its last argument. Its output is hidden so it cannot be mistaken for
-# this script's voice protocol. A failure leaves the system synthesizer below to speak instead.
+# A person's own speaker. A child PowerShell runs it after taking the shared Windows line, with the
+# narration as its last argument. Its output is hidden so it cannot be mistaken for this script's
+# voice protocol. While it runs this parent keeps ticking, so its reader can end the whole process
+# tree at once. A failure leaves the system synthesizer below to speak instead.
 function Speak-Command {
   $speaker = "$env:NARRATOR_SPEAKER"
   if (-not $speaker) { return $false }
   $quotedText = "'" + $text.Replace("'", "''") + "'"
-  Say "voice $speaker"
+  $expression = '$global:LASTEXITCODE = $null; & ' + $speaker + ' ' + $quotedText + ' *> $null; $worked = $?; if (-not $worked) { exit 1 }; if ($null -ne $LASTEXITCODE -and $LASTEXITCODE -ne 0) { exit $LASTEXITCODE }'
+  $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($expression))
+  $process = $null
   try {
-    $global:LASTEXITCODE = 0
-    $expression = '& ' + $speaker + ' ' + $quotedText + ' *> $null'
-    Invoke-Expression $expression
-    if ($? -and $LASTEXITCODE -eq 0) { return $true }
+    $hostPath = (Get-Process -Id $PID).Path
+    $process = Start-Process -FilePath $hostPath -ArgumentList @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', $encoded) -WindowStyle Hidden -PassThru
+    Say "voice $speaker"
+    while (-not $process.HasExited) {
+      Start-Sleep -Milliseconds 100
+      $process.Refresh()
+      if (-not $process.HasExited) { Tick }
+    }
+    return $process.ExitCode -eq 0
   } catch {}
+  finally {
+    if ($process -and -not $process.HasExited) {
+      & taskkill.exe /PID $process.Id /T /F *> $null
+    }
+    if ($process) { $process.Dispose() }
+  }
   return $false
 }
 

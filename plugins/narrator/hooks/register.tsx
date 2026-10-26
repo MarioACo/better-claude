@@ -353,9 +353,10 @@ async function play ($: EngineInterface, narration: Narration, command: Command)
     return { voice: '', isFallback: false, isSkipped: true }
   }
   failure ||= /^error.*$/m.exec(said)?.[0] ?? (voice ? '' : `${command.program} said nothing`)
-  // Under WSL the Windows side outlives its end of the pipe: end it by its id.
+  // End the whole Windows process tree: under WSL its side outlives the pipe, and a native custom
+  // speak command is a child of PowerShell which would otherwise outlive its supervisor.
   const pid = /^pid (\d+)/m.exec(said)?.[1]
-  if (!narration.isActive && pid && command.program === 'powershell.exe') {
+  if (!narration.isActive && pid && (command.program === 'powershell' || command.program === 'powershell.exe')) {
     await $.process.run(['taskkill.exe', '/PID', pid, '/T', '/F']).catch(() => undefined)
   }
   if (!narration.isActive) return undefined

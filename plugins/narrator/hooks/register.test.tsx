@@ -46,6 +46,7 @@ function world (on: On, { system = 'Darwin', env = {}, reply = 'es\nHe añadido 
   const efforts: unknown[] = []
   const toasts: string[] = []
   const commandHints: string[] = []
+  const runs: string[][] = []
   let heard: () => void = () => undefined
   // Resolves when the next thing is said, by a program or by the engine.
   const nextSpeech = () => new Promise<void>(resolve => { heard = resolve })
@@ -81,6 +82,7 @@ function world (on: On, { system = 'Darwin', env = {}, reply = 'es\nHe añadido 
     return { value: reply === null ? { isAnswered: false as const, reason: 'empty-reply' as const, usage: USAGE } : { isAnswered: true as const, text: reply, usage: USAGE } }
   })
   on('process.run', ($, e) => {
+    runs.push([...e.argv])
     let stdout = ''
     if (e.argv[0] === 'uname') stdout = `${system}\n`
     else if (e.argv[0] === 'sh') stdout = tools
@@ -125,7 +127,7 @@ function world (on: On, { system = 'Darwin', env = {}, reply = 'es\nHe añadido 
   const settled = async () => {
     for (let i = 0; i < 20; i++) await clock.advance(0)
   }
-  return { clock, store: kept, spoken, said, prompts, systems, efforts, toasts, commandHints, nextSpeech, settled, setRecap: (text: string) => { currentRecap = text } }
+  return { clock, store: kept, spoken, said, prompts, systems, efforts, toasts, commandHints, runs, nextSpeech, settled, setRecap: (text: string) => { currentRecap = text } }
 }
 
 /** An answer too long to be read as it is: the narrator has a model write what to say. */
@@ -550,6 +552,18 @@ test('when a Windows speak command fails, the system fallback is the voice that 
   const result = await narrator($, 'test')
   expect(result.text).toBe('Narrator: previewed Luisa.')
   expect(w.spoken[0]!.env.NARRATOR_SPEAKER).toBe('my-voice')
+})
+
+test('stopping a Windows speak command kills its whole process tree', { options: { command: 'my-voice' } }, async ($, on) => {
+  const w = world(on, { env: { OS: 'Windows_NT' }, speaker: 'talks on' })
+  await startSession($)
+  const speech = w.nextSpeech()
+  const preview = narrator($, 'test')
+  await speech
+  await $.prompt.submit({ text: 'stop it', wait: false, origin: { kind: 'composer' } })
+  await w.clock.advance(100)
+  expect((await preview).text).toBe('Narrator: preview stopped.')
+  expect(w.runs).toContainEqual(['taskkill.exe', '/PID', '42', '/T', '/F'])
 })
 
 test('with no language set, the switch shows none and the narrator follows the request', async ($, on) => {
