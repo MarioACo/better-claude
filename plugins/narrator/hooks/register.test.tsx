@@ -4,6 +4,7 @@ import type { Engine } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
 import { languageOf } from './register'
+import { WINDOWS } from './speaker'
 import { finalQuestion, guessLanguage, parseNarration, plain, withQuestion } from './text'
 
 const USAGE = { input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 }
@@ -1094,4 +1095,11 @@ test('a new prompt cuts /narrator read short', async ($, on) => {
   await $.prompt.submit({ text: 'next task', wait: false, origin: { kind: 'composer' } })
   await w.clock.advance(100)
   expect(w.spoken[0]!.isEnded).toBe(true)
+})
+
+test('the Windows speaker never interpolates narration into command source', () => {
+  expect(WINDOWS).not.toContain('$quotedText')
+  expect(WINDOWS).toContain("' $env:NARRATOR_TEXT'")
+  expect(WINDOWS).toContain("@('.cmd', '.bat')")
+  expect(WINDOWS).toContain("@('cmd', 'cmd.exe')")
 })

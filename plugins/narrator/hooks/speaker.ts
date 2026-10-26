@@ -143,15 +143,24 @@ function Pick($voices) {
 
 $script:isSpeaking = $false
 
-# A person's own speaker. A child PowerShell runs it after taking the shared Windows line, with the
-# narration as its last argument. Its output is hidden so it cannot be mistaken for this script's
-# voice protocol. While it runs this parent keeps ticking, so its reader can end the whole process
-# tree at once. A failure leaves the system synthesizer below to speak instead.
+# A person's own speaker. A child PowerShell runs it after taking the shared Windows line. Native
+# programs get the narration as their last argument, read from the environment without putting its
+# contents in code. Batch files and cmd.exe only get NARRATOR_TEXT: cmd.exe reparses quotes and
+# metacharacters in arguments, so no arbitrary narration is ever placed on its command line. The
+# command's output is hidden so it cannot be mistaken for this script's voice protocol. While it
+# runs this parent keeps ticking, so its reader can end the whole process tree at once. A failure
+# leaves the system synthesizer below to speak instead.
 function Speak-Command {
   $speaker = "$env:NARRATOR_SPEAKER"
   if (-not $speaker) { return $false }
-  $quotedText = "'" + $text.Replace("'", "''") + "'"
-  $expression = '$global:LASTEXITCODE = $null; & ' + $speaker + ' ' + $quotedText + ' *> $null; $worked = $?; if (-not $worked) { exit 1 }; if ($null -ne $LASTEXITCODE -and $LASTEXITCODE -ne 0) { exit $LASTEXITCODE }'
+  $parseErrors = $null
+  $tokens = [Management.Automation.PSParser]::Tokenize('& ' + $speaker, [ref]$parseErrors)
+  $program = @($tokens | Where-Object { $_.Type -eq 'Command' -or $_.Type -eq 'String' } | Select-Object -First 1)[0].Content
+  if (-not $program) { return $false }
+  $leaf = [IO.Path]::GetFileName($program).ToLowerInvariant()
+  $isBatch = [IO.Path]::GetExtension($leaf) -in @('.cmd', '.bat') -or $leaf -in @('cmd', 'cmd.exe')
+  $textArgument = if ($isBatch) { '' } else { ' $env:NARRATOR_TEXT' }
+  $expression = '$global:LASTEXITCODE = $null; & ' + $speaker + $textArgument + ' *> $null; $worked = $?; if (-not $worked) { exit 1 }; if ($null -ne $LASTEXITCODE -and $LASTEXITCODE -ne 0) { exit $LASTEXITCODE }'
   $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($expression))
   $process = $null
   try {
