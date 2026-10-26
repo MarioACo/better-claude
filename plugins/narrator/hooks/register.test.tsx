@@ -1100,6 +1100,8 @@ test('a new prompt cuts /narrator read short', async ($, on) => {
 test('the Windows speaker never interpolates narration into command source', () => {
   expect(WINDOWS).not.toContain('$quotedText')
   expect(WINDOWS).toContain("' $env:NARRATOR_TEXT'")
+  expect(WINDOWS).toContain('Get-Command -Name $program')
+  expect(WINDOWS).toContain('$resolved.Path')
   expect(WINDOWS).toContain("@('.cmd', '.bat')")
   expect(WINDOWS).toContain("@('cmd', 'cmd.exe')")
 })

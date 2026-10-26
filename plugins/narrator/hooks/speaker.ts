@@ -157,7 +157,12 @@ function Speak-Command {
   $tokens = [Management.Automation.PSParser]::Tokenize('& ' + $speaker, [ref]$parseErrors)
   $program = @($tokens | Where-Object { $_.Type -eq 'Command' -or $_.Type -eq 'String' } | Select-Object -First 1)[0].Content
   if (-not $program) { return $false }
-  $leaf = [IO.Path]::GetFileName($program).ToLowerInvariant()
+  # PowerShell accepts extensionless commands, including names that resolve to a .cmd or .bat on
+  # PATH. Inspect the resolved executable so those commands never receive arbitrary text as an
+  # argument through cmd.exe either.
+  $resolved = Get-Command -Name $program -CommandType Application, ExternalScript -ErrorAction SilentlyContinue | Select-Object -First 1
+  $resolvedProgram = if ($resolved -and $resolved.Path) { $resolved.Path } else { $program }
+  $leaf = [IO.Path]::GetFileName($resolvedProgram).ToLowerInvariant()
   $isBatch = [IO.Path]::GetExtension($leaf) -in @('.cmd', '.bat') -or $leaf -in @('cmd', 'cmd.exe')
   $textArgument = if ($isBatch) { '' } else { ' $env:NARRATOR_TEXT' }
   $expression = '$global:LASTEXITCODE = $null; & ' + $speaker + $textArgument + ' *> $null; $worked = $?; if (-not $worked) { exit 1 }; if ($null -ne $LASTEXITCODE -and $LASTEXITCODE -ne 0) { exit $LASTEXITCODE }'
